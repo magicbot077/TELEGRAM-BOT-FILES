@@ -1,12 +1,13 @@
-import logging
+ import logging
 import requests
 import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# ==== Tokens ====
-TELEGRAM_TOKEN = "8399634229:AAFBSB377vTAuXU1nv50D55XTR6Jyfl_G7U"
-RAPIDAPI_KEY = "67a4030b4cmshb79b66aac0fbe25p124f92jsn81e79164041a"
+# ===== Tokens =====
+import os
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 
 # RapidAPI details
 API_URL = "https://instagram-reels-downloader-api.p.rapidapi.com/download"
@@ -18,15 +19,24 @@ HEADERS = {
 # Logging
 logging.basicConfig(level=logging.INFO)
 
+# ==================== Dummy HTTP Server for Render ====================
+from http.server import SimpleHTTPRequestHandler, HTTPServer
+import threading
 
-# Start command
+PORT = int(os.environ.get("PORT", 10000))  # Render automatically sets PORT
+
+def run_dummy_server():
+    server = HTTPServer(('0.0.0.0', PORT), SimpleHTTPRequestHandler)
+    server.serve_forever()
+
+threading.Thread(target=run_dummy_server, daemon=True).start()
+
+# ==================== Bot Handlers ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Send me an Instagram reel link and I will download it for you!"
     )
 
-
-# Reel downloader with waiting popup
 async def download_reel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text.strip()
 
@@ -35,12 +45,8 @@ async def download_reel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        # 1️⃣ Send temporary waiting message
         waiting_msg = await update.message.reply_text("⏳ Processing your reel, please wait...")
 
-    
-
-        # 3️⃣ Fetch reel from API
         response = requests.get(API_URL, headers=HEADERS, params={"url": user_text})
 
         if response.status_code != 200:
@@ -48,17 +54,13 @@ async def download_reel(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         data = response.json()
-
-        # 4️⃣ Get reel URL
         reel_url = None
         if data.get("success") and "data" in data and "medias" in data["data"]:
             medias = data["data"]["medias"]
             reel_url = next((m["url"] for m in medias if m["type"] == "video"), None)
 
         if reel_url:
-            # 5️⃣ Delete waiting message
             await waiting_msg.delete()
-            # 6️⃣ Send the reel
             await update.message.reply_video(video=reel_url, caption="✅ Here is your reel!")
         else:
             await waiting_msg.edit_text("❌ Could not fetch reel, try another link.")
@@ -66,8 +68,7 @@ async def download_reel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"⚠️ Error: {str(e)}")
 
-
-# Main function
+# ==================== Main ====================
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
@@ -76,7 +77,6 @@ def main():
 
     print("Bot is running 🚀")
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()
