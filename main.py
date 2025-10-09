@@ -7,19 +7,19 @@ import os
 
 # ===== Tokens =====
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY") or "67a4030b4cmshb79b66aac0fbe25p124f92jsn81e79164041a"
 
 # Channel username (force join required)
 CHANNEL_USERNAME = "@equation_x"  
 
-# RapidAPI details
-API_URL = "https://instagram-reels-downloader-api.p.rapidapi.com/download"
+# ===== New RapidAPI endpoint =====
+API_URL = "https://insta-reels-downloader-the-fastest-hd-reels-fetcher-api.p.rapidapi.com/unified/index"
 HEADERS = {
-    "x-rapidapi-host": "instagram-reels-downloader-api.p.rapidapi.com",
+    "x-rapidapi-host": "insta-reels-downloader-the-fastest-hd-reels-fetcher-api.p.rapidapi.com",
     "x-rapidapi-key": RAPIDAPI_KEY
 }
 
-# Logging
+# ===== Logging =====
 logging.basicConfig(level=logging.INFO)
 
 # ==================== Dummy HTTP Server for Render ====================
@@ -59,26 +59,27 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-        f"👋 Welcome {first_name}!\n\nSend me an Instagram reel link and I will download it for you instantly 🚀"
+        f"👋 Welcome {first_name}!\n\nSend me any Instagram reel link, and I’ll download it for you instantly 🚀"
     )
 
-# Check subscription when user clicks "I have joined"
+# ==================== Subscription Check ====================
 async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
     first_name = query.from_user.first_name
 
     if await is_subscribed(user_id, context):
-        await query.message.delete()  # old "join channel" msg delete ho jayega
+        await query.message.delete()
         await query.message.reply_text(
             f"🎉 Welcome {first_name}!\n\nNow you can send me Instagram reel links 🚀"
         )
     else:
         await query.answer("❌ You still haven't joined the channel!", show_alert=True)
 
-# Reel downloader
+# ==================== Reel Downloader ====================
 async def download_reel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
+
     if not await is_subscribed(user_id, context):
         keyboard = InlineKeyboardMarkup(
             [[InlineKeyboardButton("✅ Join Channel", url=f"https://t.me/{CHANNEL_USERNAME[1:]}")],
@@ -101,19 +102,22 @@ async def download_reel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = requests.get(API_URL, headers=HEADERS, params={"url": user_text})
         if response.status_code != 200:
             await waiting_msg.edit_text(f"⚠️ API returned status {response.status_code}")
+            print("Response:", response.text)
             return
 
         data = response.json()
+        print("API Response:", data)
+
         reel_url = None
-        if data.get("success") and "data" in data and "medias" in data["data"]:
-            medias = data["data"]["medias"]
-            reel_url = next((m["url"] for m in medias if m["type"] == "video"), None)
+        if "data" in data and isinstance(data["data"], dict):
+            reel_url = data["data"].get("url")
 
         if reel_url:
             await waiting_msg.delete()
-            await update.message.reply_video(video=reel_url, caption="✅ Here is your reel!")
+            await update.message.reply_video(video=reel_url, caption="✅ Here’s your reel!")
         else:
             await waiting_msg.edit_text("❌ Could not fetch reel, try another link.")
+
     except Exception as e:
         await update.message.reply_text(f"⚠️ Error: {str(e)}")
 
