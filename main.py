@@ -13,7 +13,7 @@ import threading
 import moviepy.editor as mp  # <-- new import for MP3 conversion
 
 # ===== Tokens =====
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN") or "8399634229:AAFBSB377vTAuXU1nv50D55XTR6Jyfl_G7U"
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY") or "67a4030b4cmshb79b66aac0fbe25p124f92jsn81e79164041a"
 
 # ===== Channel username (force join required) =====
