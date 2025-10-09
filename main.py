@@ -4,15 +4,17 @@ import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 import os
+from http.server import SimpleHTTPRequestHandler, HTTPServer
+import threading
 
 # ===== Tokens =====
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN") or "8399634229:AAFBSB377vTAuXU1nv50D55XTR6Jyfl_G7U"
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY") or "67a4030b4cmshb79b66aac0fbe25p124f92jsn81e79164041a"
 
-# Channel username (force join required)
-CHANNEL_USERNAME = "@equation_x"  
+# ===== Channel username (force join required) =====
+CHANNEL_USERNAME = "@equation_x"
 
-# ===== New RapidAPI endpoint =====
+# ===== RapidAPI Endpoint =====
 API_URL = "https://insta-reels-downloader-the-fastest-hd-reels-fetcher-api.p.rapidapi.com/unified/index"
 HEADERS = {
     "x-rapidapi-host": "insta-reels-downloader-the-fastest-hd-reels-fetcher-api.p.rapidapi.com",
@@ -23,9 +25,6 @@ HEADERS = {
 logging.basicConfig(level=logging.INFO)
 
 # ==================== Dummy HTTP Server for Render ====================
-from http.server import SimpleHTTPRequestHandler, HTTPServer
-import threading
-
 PORT = int(os.environ.get("PORT", 10000))
 
 def run_dummy_server():
@@ -49,8 +48,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not await is_subscribed(user_id, context):
         keyboard = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("✅ Join Channel", url=f"https://t.me/{CHANNEL_USERNAME[1:]}")],
-             [InlineKeyboardButton("🔄 I have joined", callback_data="check_sub")]]
+            [
+                [InlineKeyboardButton("✅ Join Channel", url=f"https://t.me/{CHANNEL_USERNAME[1:]}")],
+                [InlineKeyboardButton("🔄 I have joined", callback_data="check_sub")]
+            ]
         )
         await update.message.reply_text(
             f"⚠️ Hello {first_name}!\n\nYou must join our channel to use this bot:\n👉 {CHANNEL_USERNAME}",
@@ -82,8 +83,10 @@ async def download_reel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not await is_subscribed(user_id, context):
         keyboard = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("✅ Join Channel", url=f"https://t.me/{CHANNEL_USERNAME[1:]}")],
-             [InlineKeyboardButton("🔄 I have joined", callback_data="check_sub")]]
+            [
+                [InlineKeyboardButton("✅ Join Channel", url=f"https://t.me/{CHANNEL_USERNAME[1:]}")],
+                [InlineKeyboardButton("🔄 I have joined", callback_data="check_sub")]
+            ]
         )
         await update.message.reply_text(
             f"⚠️ To use this bot, please join 👉 {CHANNEL_USERNAME}",
@@ -108,9 +111,23 @@ async def download_reel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data = response.json()
         print("API Response:", data)
 
+        # ✅ Corrected reel URL extraction logic
         reel_url = None
         if "data" in data and isinstance(data["data"], dict):
-            reel_url = data["data"].get("url")
+            content = data["data"].get("content", {})
+            if isinstance(content, dict):
+                # For single video reels
+                reel_url = content.get("media_url")
+
+                # For carousel/sidecar (multiple videos)
+                if not reel_url and "items" in content:
+                    items = content.get("items", [])
+                    if len(items) > 0 and "media_url" in items[0]:
+                        reel_url = items[0]["media_url"]
+            else:
+                reel_url = data["data"].get("url")
+
+        print("Extracted Reel URL:", reel_url)
 
         if reel_url:
             await waiting_msg.delete()
