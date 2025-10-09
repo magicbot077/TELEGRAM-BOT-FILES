@@ -1,14 +1,19 @@
 import logging
 import requests
 import asyncio
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 import os
+import tempfile
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler,
+    CallbackQueryHandler, filters, ContextTypes
+)
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 import threading
+import moviepy.editor as mp  # <-- new import for MP3 conversion
 
 # ===== Tokens =====
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN") or "8399634229:AAFBSB377vTAuXU1nv50D55XTR6Jyfl_G7U"
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY") or "67a4030b4cmshb79b66aac0fbe25p124f92jsn81e79164041a"
 
 # ===== Channel username (force join required) =====
@@ -24,7 +29,7 @@ HEADERS = {
 # ===== Logging =====
 logging.basicConfig(level=logging.INFO)
 
-# ==================== Dummy HTTP Server for Render ====================
+# ===== Dummy HTTP Server for Render =====
 PORT = int(os.environ.get("PORT", 10000))
 
 def run_dummy_server():
@@ -41,7 +46,7 @@ async def is_subscribed(user_id, context):
     except:
         return False
 
-# ==================== Handlers ====================
+# ==================== /start Command ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     first_name = update.message.from_user.first_name
@@ -63,7 +68,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👋 Welcome {first_name}!\n\nSend me any Instagram reel link, and I’ll download it for you instantly 🚀"
     )
 
-# ==================== Subscription Check ====================
+# ==================== Check Subscription ====================
 async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
@@ -111,32 +116,72 @@ async def download_reel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data = response.json()
         print("API Response:", data)
 
-        # ✅ Corrected reel URL extraction logic
+        # ✅ Extract reel URL
         reel_url = None
         if "data" in data and isinstance(data["data"], dict):
             content = data["data"].get("content", {})
             if isinstance(content, dict):
-                # For single video reels
                 reel_url = content.get("media_url")
-
-                # For carousel/sidecar (multiple videos)
                 if not reel_url and "items" in content:
                     items = content.get("items", [])
                     if len(items) > 0 and "media_url" in items[0]:
                         reel_url = items[0]["media_url"]
-            else:
-                reel_url = data["data"].get("url")
 
         print("Extracted Reel URL:", reel_url)
 
         if reel_url:
+            # Button for convert to MP3
+            keyboard = InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🎵 Convert to MP3", callback_data=f"convert_mp3|{reel_url}")]]
+            )
             await waiting_msg.delete()
-            await update.message.reply_video(video=reel_url, caption="✅ Here’s your reel!")
+            await update.message.reply_video(
+                video=reel_url,
+                caption="✅ Here’s your reel!\n\nClick below to convert it to MP3 🎧",
+                reply_markup=keyboard
+            )
         else:
             await waiting_msg.edit_text("❌ Could not fetch reel, try another link.")
 
     except Exception as e:
         await update.message.reply_text(f"⚠️ Error: {str(e)}")
+
+# ==================== MP3 Conversion Handler ====================
+async def convert_to_mp3(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data.split("|")
+    if len(data) != 2:
+        await query.message.reply_text("⚠️ Invalid conversion request.")
+        return
+
+    reel_url = data[1]
+    await query.message.reply_text("🎧 Converting video to MP3, please wait...")
+
+    try:
+        # Download video temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video:
+            r = requests.get(reel_url)
+            temp_video.write(r.content)
+            video_path = temp_video.name
+
+        # Convert to MP3
+        mp3_path = video_path.replace(".mp4", ".mp3")
+        video_clip = mp.VideoFileClip(video_path)
+        video_clip.audio.write_audiofile(mp3_path)
+        video_clip.close()
+
+        # Send MP3
+        with open(mp3_path, "rb") as audio_file:
+            await query.message.reply_audio(audio=audio_file, caption="🎵 Here’s your MP3 version!")
+
+        # Cleanup
+        os.remove(video_path)
+        os.remove(mp3_path)
+
+    except Exception as e:
+        await query.message.reply_text(f"⚠️ Conversion failed: {str(e)}")
 
 # ==================== Main ====================
 def main():
@@ -144,6 +189,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(check_subscription, pattern="check_sub"))
+    app.add_handler(CallbackQueryHandler(convert_to_mp3, pattern="convert_mp3"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_reel))
 
     print("Bot is running 🚀")
